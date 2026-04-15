@@ -77,6 +77,10 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
+    buildFeatures {
+        buildConfig true
+    }
+
     namespace "com.kindnessdice"
     defaultConfig {
         applicationId "com.kindnessdice"
@@ -84,6 +88,13 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+
+        def localProps = new Properties()
+        def localPropsFile = rootProject.file('local.properties')
+        if (localPropsFile.exists()) {
+            localPropsFile.withReader('UTF-8') { reader -> localProps.load(reader) }
+        }
+        buildConfigField "String", "GEMINI_API_KEY", "\"${localProps.getProperty('GEMINI_API_KEY', '')}\""
     }
     signingConfigs {
         debug {
@@ -98,8 +109,6 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
