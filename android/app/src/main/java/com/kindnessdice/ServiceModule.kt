@@ -17,14 +17,22 @@ class ServiceModule(private val reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun startService() {
-        val intent = Intent(reactContext, KindnessDiceService::class.java)
-        reactContext.startForegroundService(intent)
+        try {
+            val intent = Intent(reactContext, KindnessDiceService::class.java)
+            reactContext.startForegroundService(intent)
+        } catch (e: Exception) {
+            // Ignore — service may already be running or context unavailable
+        }
     }
 
     @ReactMethod
     fun stopService() {
-        val intent = Intent(reactContext, KindnessDiceService::class.java)
-        reactContext.stopService(intent)
+        try {
+            val intent = Intent(reactContext, KindnessDiceService::class.java)
+            reactContext.stopService(intent)
+        } catch (e: Exception) {
+            // Ignore — service may already be stopped
+        }
     }
 
     @ReactMethod

@@ -12,7 +12,7 @@ class KindnessDiceService : Service() {
 
     companion object {
         const val CHANNEL_ID = "kindness_dice_channel"
-        const val NOTIFICATION_ID = 1
+        const val NOTIFICATION_ID = 1001
         var isRunning = false
     }
 
