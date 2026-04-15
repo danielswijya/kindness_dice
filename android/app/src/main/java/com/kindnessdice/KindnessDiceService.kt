@@ -54,11 +54,12 @@ class KindnessDiceService : Service(), SensorEventListener {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
         initSensor()
-        registerReceiver(
-            overlayDismissedReceiver,
-            IntentFilter(ACTION_OVERLAY_DISMISSED),
-            RECEIVER_NOT_EXPORTED
-        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(overlayDismissedReceiver, IntentFilter(ACTION_OVERLAY_DISMISSED), RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(overlayDismissedReceiver, IntentFilter(ACTION_OVERLAY_DISMISSED))
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
