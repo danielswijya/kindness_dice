@@ -30,7 +30,10 @@ export default function FirstLaunchScreen({onComplete}: Props) {
 
   function requestBatteryOptimization() {
     ServiceModule.requestIgnoreBatteryOptimizations();
-    setTimeout(onComplete, 1000);
+    setTimeout(() => {
+      ServiceModule.requestOverlayPermission();
+      setTimeout(onComplete, 1000);
+    }, 1000);
   }
 
   if (step === 'permissions') {

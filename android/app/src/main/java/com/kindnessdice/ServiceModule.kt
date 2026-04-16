@@ -41,6 +41,17 @@ class ServiceModule(private val reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun requestOverlayPermission() {
+        if (!Settings.canDrawOverlays(reactContext)) {
+            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:${reactContext.packageName}")).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            reactContext.startActivity(intent)
+        }
+    }
+
+    @ReactMethod
     fun requestIgnoreBatteryOptimizations() {
         val pm = reactContext.getSystemService(Context.POWER_SERVICE) as PowerManager
         if (!pm.isIgnoringBatteryOptimizations(reactContext.packageName)) {

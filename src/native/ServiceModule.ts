@@ -6,6 +6,7 @@ const {ServiceModule} = NativeModules as {
     stopService(): void;
     isServiceRunning(): Promise<boolean>;
     requestIgnoreBatteryOptimizations(): void;
+    requestOverlayPermission(): void;
   };
 };
 

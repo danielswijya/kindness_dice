@@ -8,6 +8,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -19,7 +22,18 @@ import android.os.IBinder
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.provider.Settings
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.WindowManager
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlin.math.sqrt
 
 class KindnessDiceService : Service(), SensorEventListener {
@@ -27,8 +41,9 @@ class KindnessDiceService : Service(), SensorEventListener {
     companion object {
         const val CHANNEL_ID = "kindness_dice_channel"
         const val NOTIFICATION_ID = 1001
-        const val SHAKE_THRESHOLD = 20f
+        const val SHAKE_THRESHOLD = 12f
         const val SHAKE_DURATION_MS = 5500L
+        const val SHAKE_GRACE_MS = 500L  // brief drops don't reset timer
         const val ACTION_OVERLAY_DISMISSED = "com.kindnessdice.OVERLAY_DISMISSED"
         var isRunning = false
     }
@@ -38,6 +53,7 @@ class KindnessDiceService : Service(), SensorEventListener {
     private var mediaPlayer: MediaPlayer? = null
 
     private var shakeStartTime: Long = 0
+    private var lastAboveThreshold: Long = 0
     private var isShaking = false
     private var triggerArmed = false
     var overlayVisible = false
@@ -96,20 +112,22 @@ class KindnessDiceService : Service(), SensorEventListener {
         val az = event.values[2]
         val aT = sqrt(ax * ax + ay * ay + az * az)
 
+        val now = System.currentTimeMillis()
         if (aT >= SHAKE_THRESHOLD) {
+            lastAboveThreshold = now
             if (!isShaking) {
                 isShaking = true
-                shakeStartTime = System.currentTimeMillis()
+                shakeStartTime = now
                 triggerArmed = false
                 startContinuousVibration()
                 startDiceSound()
             }
-            val elapsed = System.currentTimeMillis() - shakeStartTime
+            val elapsed = now - shakeStartTime
             if (!triggerArmed && elapsed >= SHAKE_DURATION_MS) {
                 triggerArmed = true
             }
         } else {
-            if (isShaking) {
+            if (isShaking && (now - lastAboveThreshold) > SHAKE_GRACE_MS) {
                 isShaking = false
                 stopContinuousVibration()
                 stopDiceSound()
@@ -132,12 +150,120 @@ class KindnessDiceService : Service(), SensorEventListener {
     }
 
     private fun launchOverlay() {
+        if (!Settings.canDrawOverlays(this)) return  // permission not granted yet
         overlayVisible = true
-        val intent = Intent(this, KindnessOverlayActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val params = WindowManager.LayoutParams(
+            MATCH_PARENT, MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        )
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.parseColor("#FFF8EF"))
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+            setPadding(80, 120, 80, 120)
         }
-        startActivity(intent)
-        Handler(mainLooper).postDelayed({ overlayVisible = false }, 60_000)
+
+        val emojiText = TextView(this).apply {
+            text = "🎲"
+            textSize = 56f
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = 48 }
+        }
+
+        val kindnessText = TextView(this).apply {
+            text = "Rolling your kindness…"
+            textSize = 22f
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#5D3A1A"))
+            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = 64 }
+        }
+
+        val divider = View(this).apply {
+            setBackgroundColor(Color.parseColor("#EDD9B8"))
+            layoutParams = LinearLayout.LayoutParams(120, 2).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                topMargin = 48; bottomMargin = 48
+            }
+        }
+
+        val hint = TextView(this).apply {
+            text = "tap anywhere to dismiss"
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#C4A882"))
+        }
+
+        root.addView(emojiText)
+        root.addView(kindnessText)
+        root.addView(divider)
+        root.addView(hint)
+
+        fun dismiss() {
+            try { wm.removeView(root) } catch (_: Exception) {}
+            overlayVisible = false
+        }
+
+        root.setOnClickListener { dismiss() }
+        wm.addView(root, params)
+
+        // Safety timeout
+        Handler(mainLooper).postDelayed({ dismiss() }, 60_000)
+
+        // Fetch kindness
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        if (apiKey.isBlank()) {
+            emojiText.text = "💙"
+            kindnessText.text = "Couldn't reach kindness today. Try again."
+            return
+        }
+        Thread {
+            val result = callGeminiApi(apiKey)
+            Handler(mainLooper).post {
+                if (result != null) {
+                    emojiText.text = "✨"
+                    kindnessText.text = result
+                } else {
+                    emojiText.text = "💙"
+                    kindnessText.text = "Couldn't reach kindness today. Try again."
+                }
+            }
+        }.start()
+    }
+
+    private fun callGeminiApi(apiKey: String): String? {
+        return try {
+            val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 15_000
+            conn.doOutput = true
+            val body = """{"contents":[{"parts":[{"text":"Suggest one specific, warm, and concrete act of kindness I can do today. Be direct, one sentence, no preamble."}]}]}"""
+            conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            if (conn.responseCode != 200) {
+                android.util.Log.e("KindnessDice", "Gemini HTTP ${conn.responseCode}: ${conn.errorStream?.bufferedReader()?.readText()}")
+                return null
+            }
+            JSONObject(conn.inputStream.bufferedReader().readText())
+                .getJSONArray("candidates").getJSONObject(0)
+                .getJSONObject("content")
+                .getJSONArray("parts").getJSONObject(0)
+                .getString("text").trim()
+        } catch (e: Exception) {
+            android.util.Log.e("KindnessDice", "Gemini exception: ${e::class.simpleName}: ${e.message}", e)
+            null
+        }
     }
 
     // ─── Vibration ─────────────────────────────────────────────────────────────
