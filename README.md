@@ -1,6 +1,6 @@
 # Kindness Dice
 
-> Shake your phone for 5.5 seconds. Receive a random act of kindness.
+> yup...shake your phone for 5.5 seconds - and receive a random act of kindness.
 
 ![Platform](https://img.shields.io/badge/platform-Android-green)
 ![React Native](https://img.shields.io/badge/React%20Native-0.79-blue)
